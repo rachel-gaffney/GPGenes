@@ -1,12 +1,15 @@
 import numpy as np
 import pandas as pd
 
+# simulation utilities
 from data.simulate import (
     create_genes, 
     genes_to_digraph, 
     make_perturbation_list, 
     simulate_dataset
 )
+
+# kernel construction
 from models.kernels import (
     graph_to_weighted_adjacency,
     symmetrize,
@@ -14,23 +17,32 @@ from models.kernels import (
     combined_kernel,
     combined_kernel_diag,
 )
+
+# dataset utilities
 from data.dataset import (
     build_xy_from_df,
     compute_control_baseline,
     residualize,
     split_by_perturbation,
 )
+
+# GP model
 from models.gp import GaussianProcessRegressor
 
 
 def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """
+    Root Mean Squared Error
+    """
     y_true = np.asarray(y_true, dtype=float).reshape(-1)
     y_pred = np.asarray(y_pred, dtype=float).reshape(-1)
     return float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
 
 
 def main():
-    # 1) Simulate
+    # ---------------------------------------------------------
+    # 1) Simulate gene regulatory network and perturbation data
+    # ---------------------------------------------------------
     genes = create_genes(n_genes=30, tf_fraction=0.3, n_modules=3, seed=1)
     n_genes = len(genes)
 
@@ -53,26 +65,36 @@ def main():
     )
     df = pd.DataFrame(rows)
 
-    # 2) Split by perturbation (keeps replicates together)
+    # ---------------------------------------------------------
+    # 2) Train/test split by perturbation (keeps replicates together)
+    # ---------------------------------------------------------
     df_train, df_test = split_by_perturbation(df, test_frac=0.25, seed=0)
 
-    # 3) Baseline from train controls only
+    # ---------------------------------------------------------
+    # 3) Compute baseline from train control samples only
+    # ---------------------------------------------------------
     mu = compute_control_baseline(df_train, n_genes=n_genes)
 
-    # 4) Build X/Y and residuals
+    # ---------------------------------------------------------
+    # 4) Build X/Y (GP inputs) and residual targets
+    # ---------------------------------------------------------
     Xtr, Ytr, _ = build_xy_from_df(df_train, n_genes=n_genes)
     Xte, Yte, _ = build_xy_from_df(df_test, n_genes=n_genes)
 
     Rtr = residualize(Ytr, mu)
     Rte = residualize(Yte, mu)
 
-    # 5) Build GRN-derived node kernel K_gene
+    # ---------------------------------------------------------
+    # 5) Build GRN-derived gene-level diffusion kernel K_gene
+    # ---------------------------------------------------------
     G = genes_to_digraph(genes)
     A = graph_to_weighted_adjacency(G, n=n_genes, use_abs=True)
     A_sym = symmetrize(A)
     K_gene = diffusion_node_kernel(A_sym, beta=1.0, jitter=1e-8)
 
+    # ---------------------------------------------------------
     # 6) Kernel hyperparameters (fixed for minimal version)
+    # ---------------------------------------------------------
     a1, a2, a3 = 1.0, 0.5, 0.2
     length_scale = 1.0
 
@@ -81,7 +103,9 @@ def main():
     Kte_tr = combined_kernel(Xte, Xtr, K_gene, a1=a1, a2=a2, a3=a3, length_scale=length_scale)
     Kte_diag = combined_kernel_diag(Xte, K_gene, a1=a1, a2=a2, a3=a3)
 
+    # ---------------------------------------------------------
     # 7) Fit per-gene GP on residuals
+    # ---------------------------------------------------------
     rmses = []
     for g in range(n_genes):
         ytr = Rtr[:, g]
@@ -98,6 +122,9 @@ def main():
 
         rmses.append(rmse(yte, pred))
 
+    # ---------------------------------------------------------
+    # 8) Report performance and diagnostics
+    # ---------------------------------------------------------
     print(f"Mean RMSE across genes: {np.mean(rmses):.4f}")
     print(f"Median RMSE across genes: {np.median(rmses):.4f}")
     print("Example gene 0 RMSE:", rmses[0])
