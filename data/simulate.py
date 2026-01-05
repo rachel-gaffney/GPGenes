@@ -7,6 +7,8 @@ import networkx as nx
 import numpy as np
 from collections import defaultdict, deque
 from dataclasses import dataclass
+from typing import List, Tuple
+from itertools import combinations
 
 
 @dataclass
@@ -155,6 +157,16 @@ def clone_genes(genes):
     return cloned
 
 
+def genes_to_digraph(genes: List[Gene]) -> nx.DiGraph:
+    G = nx.DiGraph()
+    for g in genes:
+        G.add_node(g.id, tf=g.is_tf)
+    for tgt in genes:
+        for r in tgt.regulators:
+            G.add_edge(r.source.id, tgt.id, weight=float(r.strength), delay=int(r.delay))
+    return G
+
+
 def run(genes, steps=5000, delta=0.01):
     for g in genes:
         g.reset()
@@ -169,7 +181,14 @@ def run_with_knockout(genes, ko_gene_id=None, steps=5000, delta=0.01):
     genes = clone_genes(genes)
 
     if ko_gene_id is not None:
-        genes[ko_gene_id].knock_out()
+        if isinstance(ko_gene_id, (list, tuple, set)):
+            ko_ids = list(ko_gene_id)
+        else:
+            ko_ids = [int(ko_gene_id)]
+
+        for gid in ko_ids:
+            genes[gid].knock_out()
+
 
     run(genes, steps=steps, delta=delta)
     return genes
@@ -182,47 +201,87 @@ def summarize_run(genes, n=100):
     return summary
 
 
-def simulate_all_single_knockouts(
-    genes,
-    steps=1000,
-    delta=0.01,
-    tail_steps=100,
-    csv_path="knockout_data.csv",
-):
-    rows = []
+def make_perturbation_list(
+    n_genes: int,
+    include_singles: bool = True,
+    include_doubles: bool = False,
+    n_doubles: int = 50,
+    seed: int = 0,
+) -> List[Tuple[int, ...]]:
+    """
+    Returns perturbations as tuples of KO gene IDs:
+      () is control, (i,) is single KO, (i,j) is double KO.
+    """
+    rng = random.Random(seed)
+    perts: List[Tuple[int, ...]] = [tuple()]  # control
 
-    control_genes = run_with_knockout(genes, ko_gene_id=None, steps=steps, delta=delta)
-    control_summary = summarize_run(control_genes, n=tail_steps)
+    if include_singles:
+        perts.extend([(i,) for i in range(n_genes)])
 
-    control_row = {"knockout_gene": "co"}
-    for gid, val in control_summary.items():
-        control_row[f"{gid:02}"] = val
-    rows.append(control_row)
+    if include_doubles:
+        pairs = list(combinations(range(n_genes), 2))
+        rng.shuffle(pairs)
+        perts.extend(pairs[: min(n_doubles, len(pairs))])
 
-    for ko_id in range(len(genes)):
-        ko_genes = run_with_knockout(genes, ko_gene_id=ko_id, steps=steps, delta=delta)
-        ko_summary = summarize_run(ko_genes, n=tail_steps)
+    return perts
 
-        row = {"knockout_gene": f"{ko_id:02}"}
-        for gid, val in ko_summary.items():
-            row[f"{gid:02}"] = val
-        rows.append(row)
+# I've added n_reps and seed parameters to allow random replicates for each deletion
+# thought then we can tune noise/get more meaningful uncertainty estimates
+# can remove or set n_reps=1 if not needed.
+def simulate_dataset(
+    genes: List[Gene],
+    perturbations: List[Tuple[int, ...]],
+    n_reps: int = 1,
+    steps: int = 1500,
+    delta: float = 0.01,
+    tail_steps: int = 200,
+    seed: int = 0,
+    csv_path: Optional[str] = None
+) -> list[dict]:
+    """
+    Simulate a dataset in the long format expected by dataset.py:
 
-    fieldnames = ["knockout_gene"] + [f"{i:02}" for i in range(len(genes))]
+      columns:
+        - perturbation: "co" or "03" or "03+17"
+        - replicate: int
+        - seed: int
+        - g00..gNN: float expression summaries
 
-    with open(csv_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
+    Returns:
+      rows: list of dicts
+    """
+    rows: list[dict] = []
+    n_genes = len(genes)
+    rng = random.Random(seed)
+
+    for pert in perturbations:
+        pert_label = "co" if len(pert) == 0 else "+".join(f"{i:02d}" for i in pert)
+
+        for rep in range(n_reps):
+            run_seed = rng.randint(0, 2**31 - 1)
+            random.seed(run_seed)
+
+            sim_genes = run_with_knockout(
+                genes,
+                ko_gene_id=list(pert),
+                steps=steps,
+                delta=delta,
+            )
+            summary = summarize_run(sim_genes, n=tail_steps)
+
+            row = {"perturbation": pert_label, "replicate": rep, "seed": run_seed}
+            for gid in range(n_genes):
+                row[f"g{gid:02d}"] = float(summary[gid])
+            rows.append(row)
+
+    if csv_path is not None:
+        fieldnames = ["perturbation", "replicate", "seed"] + [f"g{i:02d}" for i in range(n_genes)]
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
 
     return rows
-
-
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcl
-import networkx as nx
-import numpy as np
-
 
 def plot_graph(genes):
     G = nx.DiGraph()
@@ -317,10 +376,14 @@ if __name__ == "__main__":
     plot_graph(genes)
     plot_trajectories(genes)
 
-    simulate_all_single_knockouts(
+    perts = make_perturbation_list(n_genes=len(genes), include_singles=True, include_doubles=False, seed=0)
+    simulate_dataset(
         genes,
+        perturbations=perts,
         steps=1000,
         delta=0.01,
         tail_steps=100,
+        n_reps=3,
+        seed=0,
         csv_path="knockout_data.csv",
     )
