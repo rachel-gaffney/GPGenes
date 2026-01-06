@@ -98,8 +98,8 @@ def main():
         lr = LinearRegression(fit_intercept=True)
         lr.fit(Xtr, ytr_lin)
 
-        pred = lr.predict(Xte)
-        linear_rmses.append(rmse(yte_lin, pred))
+        pred_lin = lr.predict(Xte)
+        linear_rmses.append(rmse(yte_lin, pred_lin))
 
     print(f"[Linear] Mean RMSE across genes: {np.mean(linear_rmses):.4f}")
     print(f"[Linear] Median RMSE across genes: {np.median(linear_rmses):.4f}")
@@ -117,19 +117,19 @@ def main():
 
     id_rmses = []
     for g in range(n_genes):
-        ytr = Rtr[:, g]
-        yte = Rte[:, g]
+        ytr_id = Rtr[:, g]
+        yte_id = Rte[:, g]
 
-        gp = GaussianProcessRegressor(
+        gp_id = GaussianProcessRegressor(
             noise_variance=1e-4,
             jitter=1e-8,
             normalize_y=True,
         )
 
-        gp.fit_from_gram(Ktr_id, ytr)
-        pred = gp.predict_from_gram(Kte_tr_id, K_test_diag=Kte_diag_id, return_std=False, include_noise=False)
+        gp_id.fit_from_gram(Ktr_id, ytr_id)
+        pred_id = gp_id.predict_from_gram(Kte_tr_id, K_test_diag=Kte_diag_id, return_std=False, include_noise=False)
 
-        id_rmses.append(rmse(yte, pred))
+        id_rmses.append(rmse(yte_id, pred_id))
 
     print(f"[Identity Kernel] Mean RMSE across genes: {np.mean(id_rmses):.4f}")
     print(f"[Identity Kernel] Median RMSE across genes: {np.median(id_rmses):.4f}")
@@ -137,6 +137,28 @@ def main():
     # ---------------------------------------------------------
     # 4.3) Baseline: GP with k1 only
     # ---------------------------------------------------------
+    Ktr_k1 = combined_kernel(Xtr, Xtr, I_gene, a1=1.0, a2=0.0, a3=0.0, length_scale=length_scale)
+    Kte_tr_k1 = combined_kernel(Xte, Xtr, I_gene, a1=1.0, a2=0.0, a3=0.0, length_scale=length_scale)
+    Kte_diag_k1 = combined_kernel_diag(Xte, I_gene, a1=1.0, a2=0.0, a3=0.0)
+
+    k1_rmses = []
+    for g in range(n_genes):
+        ytr_k1 = Rtr[:, g]
+        yte_k1 = Rte[:, g]
+
+        gp_k1 = GaussianProcessRegressor(
+            noise_variance=1e-4,
+            jitter=1e-8,
+            normalize_y=True,
+        )
+
+        gp_k1.fit_from_gram(Ktr_k1, ytr_k1)
+        pred_k1 = gp_k1.predict_from_gram(Kte_tr_k1, K_test_diag=Kte_diag_k1, return_std=False, include_noise=False)
+
+        k1_rmses.append(rmse(yte_k1, pred_k1))
+
+    print(f"[K1 Kernel] Mean RMSE across genes: {np.mean(k1_rmses):.4f}")
+    print(f"[K1 Kernel] Median RMSE across genes: {np.median(k1_rmses):.4f}")
 
     # ---------------------------------------------------------
     # 5) Build GRN-derived gene-level diffusion kernel K_gene
