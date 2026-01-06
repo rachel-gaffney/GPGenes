@@ -87,7 +87,7 @@ def main():
     Rte = residualize(Yte, mu)
 
     # ---------------------------------------------------------
-    # 4.5) Baseline: linear regression on X (no kernel, no GRN)
+    # 4.1) Baseline: linear regression on X (no kernel, no GRN)
     # ---------------------------------------------------------
     linear_rmses = []
 
@@ -103,6 +103,40 @@ def main():
 
     print(f"[Linear] Mean RMSE across genes: {np.mean(linear_rmses):.4f}")
     print(f"[Linear] Median RMSE across genes: {np.median(linear_rmses):.4f}")
+
+    # ---------------------------------------------------------
+    # 4.2) Baseline: GP with identity K_gene
+    # ---------------------------------------------------------    
+    I_gene = np.eye(n_genes, dtype=float)
+    a1, a2, a3 = 1.0, 0.5, 0.2
+    length_scale = 1.0
+
+    Ktr_id = combined_kernel(Xtr, Xtr, I_gene, a1=a1, a2=a2, a3=a3, length_scale=length_scale)
+    Kte_tr_id = combined_kernel(Xte, Xtr, I_gene, a1=a1, a2=a2, a3=a3, length_scale=length_scale)
+    Kte_diag_id = combined_kernel_diag(Xte, I_gene, a1=a1, a2=a2, a3=a3)
+
+    id_rmses = []
+    for g in range(n_genes):
+        ytr = Rtr[:, g]
+        yte = Rte[:, g]
+
+        gp = GaussianProcessRegressor(
+            noise_variance=1e-4,
+            jitter=1e-8,
+            normalize_y=True,
+        )
+
+        gp.fit_from_gram(Ktr_id, ytr)
+        pred = gp.predict_from_gram(Kte_tr_id, K_test_diag=Kte_diag_id, return_std=False, include_noise=False)
+
+        id_rmses.append(rmse(yte, pred))
+
+    print(f"[Identity Kernel] Mean RMSE across genes: {np.mean(id_rmses):.4f}")
+    print(f"[Identity Kernel] Median RMSE across genes: {np.median(id_rmses):.4f}")
+
+    # ---------------------------------------------------------
+    # 4.3) Baseline: GP with k1 only
+    # ---------------------------------------------------------
 
     # ---------------------------------------------------------
     # 5) Build GRN-derived gene-level diffusion kernel K_gene
