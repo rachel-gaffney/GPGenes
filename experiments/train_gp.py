@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from sklearn.linear_model import LinearRegression
 
 # simulation utilities
 from data.simulate import (
@@ -25,6 +26,7 @@ from data.dataset import (
     residualize,
     split_by_perturbation,
 )
+
 
 # GP model
 from models.gp import GaussianProcessRegressor
@@ -85,6 +87,24 @@ def main():
     Rte = residualize(Yte, mu)
 
     # ---------------------------------------------------------
+    # 4.5) Baseline: linear regression on X (no kernel, no GRN)
+    # ---------------------------------------------------------
+    linear_rmses = []
+
+    for g in range(n_genes):
+        ytr_lin = Rtr[:, g]
+        yte_lin = Rte[:, g]
+
+        lr = LinearRegression(fit_intercept=True)
+        lr.fit(Xtr, ytr_lin)
+
+        pred = lr.predict(Xte)
+        linear_rmses.append(rmse(yte_lin, pred))
+
+    print(f"[Linear] Mean RMSE across genes: {np.mean(linear_rmses):.4f}")
+    print(f"[Linear] Median RMSE across genes: {np.median(linear_rmses):.4f}")
+
+    # ---------------------------------------------------------
     # 5) Build GRN-derived gene-level diffusion kernel K_gene
     # ---------------------------------------------------------
     G = genes_to_digraph(genes)
@@ -93,15 +113,18 @@ def main():
     K_gene = diffusion_node_kernel(A_sym, beta=1.0, jitter=1e-8)
 
     # ---------------------------------------------------------
-    # 6) Kernel hyperparameters (fixed for minimal version)
+    # 6) Kernel hyperparameters 
     # ---------------------------------------------------------
     a1, a2, a3 = 1.0, 0.5, 0.2
+    # TODO: optimise a1, a2, a3 via grid search / marginal likelihood
     length_scale = 1.0
 
     # Precompute Gram matrices once (same X for all genes)
     Ktr = combined_kernel(Xtr, Xtr, K_gene, a1=a1, a2=a2, a3=a3, length_scale=length_scale)
     Kte_tr = combined_kernel(Xte, Xtr, K_gene, a1=a1, a2=a2, a3=a3, length_scale=length_scale)
     Kte_diag = combined_kernel_diag(Xte, K_gene, a1=a1, a2=a2, a3=a3)
+
+    # TODO: add kernel sanity checks (e.g. PSD, symmetry, condition number, eigen spectrum. Good for report later.)
 
     # ---------------------------------------------------------
     # 7) Fit per-gene GP on residuals
