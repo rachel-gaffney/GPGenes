@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
+from matplotlib import pyplot as plt
 
 # simulation utilities
 from data.simulate import (
@@ -42,6 +43,8 @@ def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
 
 
 def main():
+    results = {}
+
     # ---------------------------------------------------------
     # 1) Simulate gene regulatory network and perturbation data
     # ---------------------------------------------------------
@@ -101,6 +104,8 @@ def main():
         pred_lin = lr.predict(Xte)
         linear_rmses.append(rmse(yte_lin, pred_lin))
 
+    results["linear"] = np.array(linear_rmses)
+
     print(f"[Linear] Mean RMSE across genes: {np.mean(linear_rmses):.4f}")
     print(f"[Linear] Median RMSE across genes: {np.median(linear_rmses):.4f}")
 
@@ -131,6 +136,8 @@ def main():
 
         id_rmses.append(rmse(yte_id, pred_id))
 
+    results["gp_identity"] = np.array(id_rmses)
+
     print(f"[Identity Kernel] Mean RMSE across genes: {np.mean(id_rmses):.4f}")
     print(f"[Identity Kernel] Median RMSE across genes: {np.median(id_rmses):.4f}")
 
@@ -156,6 +163,8 @@ def main():
         pred_k1 = gp_k1.predict_from_gram(Kte_tr_k1, K_test_diag=Kte_diag_k1, return_std=False, include_noise=False)
 
         k1_rmses.append(rmse(yte_k1, pred_k1))
+
+    results["gp_k1"] = np.array(k1_rmses)
 
     print(f"[K1 Kernel] Mean RMSE across genes: {np.mean(k1_rmses):.4f}")
     print(f"[K1 Kernel] Median RMSE across genes: {np.median(k1_rmses):.4f}")
@@ -201,6 +210,8 @@ def main():
 
         rmses.append(rmse(yte, pred))
 
+    results["gp_full"] = np.array(rmses)
+
     # ---------------------------------------------------------
     # 8) Report performance and diagnostics
     # ---------------------------------------------------------
@@ -215,6 +226,23 @@ def main():
     print("Controls in train:", (df_train["perturbation"] == "co").sum())
     print("K_gene shape:", K_gene.shape)
     print("Ktr shape:", Ktr.shape)
+
+    # ---------------------------------------------------------
+    # 9) plots (optional)
+    # ---------------------------------------------------------
+
+    plt.boxplot([
+        results["linear"],
+        results["gp_identity"],
+        results["gp_k1"],
+        results["gp_full"],
+    ], labels=[
+        "Linear",
+        "GP Identity",
+        "GP k1",
+        "GP Full",
+    ])
+    plt.show()
 
 if __name__ == "__main__":
     main()
