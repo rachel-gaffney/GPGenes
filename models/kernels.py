@@ -39,7 +39,9 @@ def diffusion_node_kernel(A_sym: np.ndarray, beta: float = 1.0, jitter: float = 
        1. Compute graph Laplacian L = D - A_sym.
        2. Compute diffusion kernel: K = exp(-beta * L)
     
-    Interpretations: Genes close in the regualatory network are more similar. 
+    Interpretations: 
+       1. Genes close in the regulatory network are more similar. 
+       2. Information diffuses along regulatory paths
 
     Returns: 
         K_gene: (n_genes, n_genes) positive-definite kernel matrix.
@@ -50,6 +52,8 @@ def diffusion_node_kernel(A_sym: np.ndarray, beta: float = 1.0, jitter: float = 
 
     # matrix exponential of the laplaian
     K = expm(-beta * L)
+
+    # TODO: normalise K or normalise L (before computing K), this will improve numerical stability and make a1, a2, a3 easier to interpret
 
     # ensure symmetry
     K = (K + K.T) / 2.0
@@ -67,6 +71,9 @@ def _k1_set_linear(Xa: np.ndarray, Xb: np.ndarray, K_gene: np.ndarray) -> np.nda
 
     k1(Xa, Xb) where rows are perturbations:
       k1(x, x') = x^T K_gene x'
+
+    Interpretation:
+        Two perturbations are similar if they knock out related genes.
     
     Shapes:
         Xa: (na, n_genes)
@@ -82,6 +89,9 @@ def _k1_set_linear(Xa: np.ndarray, Xb: np.ndarray, K_gene: np.ndarray) -> np.nda
 def _rbf_from_Z(Za: np.ndarray, Zb: np.ndarray, length_scale: float) -> np.ndarray:
     """
     RBF kernel between two feature matrices Za (na,d), Zb (nb,d).
+
+    Interpretation:
+        Smooth nonlinear similarity between perturbations in the feature space
 
     k(z, z') = exp(-||z - z'||^2 / (2 * l^2))
     """
@@ -106,7 +116,10 @@ def kernel_components(
       krbf = RBF( K_gene x , K_gene x' )
     """
     k1 = _k1_set_linear(Xa, Xb, K_gene)
-    k2 = k1**2
+    k2 = k1**2 # quadratic interaction kernel (captures synergistic / epistatic effects)
+
+    # TODO: k1 can be large, which would make k2 explode and kernel can then become dominated by the interaction term.
+    #       consider normalising k1 before squaring (important if we see model instability during training)
 
     Za = (K_gene @ Xa.T).T
     Zb = (K_gene @ Xb.T).T
@@ -129,9 +142,11 @@ def combined_kernel(
     K = a1^2*k1 + a2^2*k2 + a3^2*krbf
 
     a1, a2, a3 control relative importance of:
-    - linear effects
-    - interaction effects
-    - smooth nonlinear similarity
+    - linear effects (k1)
+    - interaction effects (k2)
+    - smooth nonlinear similarity (kr)
+
+    Note: not added the diffusion kernel over genes here because it's pre-multiplied into X already.
     """
     k1, k2, kr = kernel_components(Xa, Xb, K_gene, length_scale=length_scale)
     K = (a1**2) * k1 + (a2**2) * k2 + (a3**2) * kr
