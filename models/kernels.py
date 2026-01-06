@@ -6,7 +6,7 @@ from scipy.linalg import expm
 
 def graph_to_weighted_adjacency(G: nx.DiGraph, n: int, use_abs: bool = True) -> np.ndarray:
     """
-    Convert a directed grapg into an adjacency matrix A (n x n).
+    Convert a directed graph into an adjacency matrix A (n x n).
 
     A[i, j] = weight of edge i -> j
     If use_abs is True, edge weights are converted to absolute values.
@@ -24,16 +24,16 @@ def graph_to_weighted_adjacency(G: nx.DiGraph, n: int, use_abs: bool = True) -> 
 def symmetrize(A: np.ndarray) -> np.ndarray:
     """
     Make adjacency matrix symmetric:
-    A_sym = A + A^T
+    A_sym = (A + A^T) / 2
 
     Used so that downstream kernels are symmetric and positive semidefinite
     """
-    return A + A.T
+    return (A + A.T) / 2.0
 
 
 def diffusion_node_kernel(A_sym: np.ndarray, beta: float = 1.0, jitter: float = 1e-8) -> np.ndarray:
     """
-    Construct a diffusion kernel over genes. 
+    Construct a diffusion kernel over genes. (this is the biological prior)
 
     Steps:
        1. Compute graph Laplacian L = D - A_sym.
