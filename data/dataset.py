@@ -27,8 +27,8 @@ def build_xy_from_df(df: pd.DataFrame, n_genes: int):
     into multi-hot inputs X and expression targets Y for GP regression.
     """
     pert_sets = [parse_perturbation(s) for s in df["perturbation"].tolist()]
-    X = encode_multihot(pert_sets, n_genes)
-    Y = df[[f"g{i:02d}" for i in range(n_genes)]].to_numpy(dtype=float)
+    X = encode_multihot(pert_sets, n_genes) # multi-hot vector of length n_genes for each perturbation
+    Y = df[[f"g{i:02d}" for i in range(n_genes)]].to_numpy(dtype=float) # raw expression levels per gene
     return X, Y, pert_sets
 
 
@@ -41,7 +41,7 @@ def compute_control_baseline(df: pd.DataFrame, n_genes: int) -> np.ndarray:
 
 
 def residualize(Y: np.ndarray, mu: np.ndarray) -> np.ndarray:
-    return Y - mu[None, :]
+    return Y - mu[None, :] # GP learns effects of perturbations, not baseline expression
 
 
 def split_by_perturbation(df: pd.DataFrame, test_frac: float = 0.2, seed: int = 0):

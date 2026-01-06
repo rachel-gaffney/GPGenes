@@ -27,6 +27,8 @@ def _solve_chol(L: np.ndarray, B: np.ndarray) -> np.ndarray:
     """
     Solve (L L^T) X = B for X, where L is lower-triangular Cholesky.
     Uses np.linalg.solve twice.
+
+    This computes X = (L L^T)^-1 B efficiently.
     """
     Y = np.linalg.solve(L, B)
     X = np.linalg.solve(L.T, Y)
@@ -35,7 +37,11 @@ def _solve_chol(L: np.ndarray, B: np.ndarray) -> np.ndarray:
 
 class GaussianProcessRegressor:
     """
-    Zero-mean GP regressor with fixed kernel Gram matrices.
+    Zero-mean GP regressor with fixed (pre-computed) kernel Gram matrices.
+
+    Assumes:
+    - kernel matrices are computed externally
+    - one-dimensional outputs (one GP per gene) 
 
     You provide kernel functions that compute:
       K_train = K(X_train, X_train)
@@ -50,6 +56,7 @@ class GaussianProcessRegressor:
         self.jitter = float(jitter)
         self.normalize_y = bool(normalize_y)
 
+        # stored after fitting
         self.X_train = None
         self.y_mean = 0.0
         self.y_std = 1.0
@@ -58,6 +65,13 @@ class GaussianProcessRegressor:
         self.alpha = None      # (K + noise*I)^-1 y
 
     def fit_from_gram(self, K_train: np.ndarray, y_train: np.ndarray):
+        """
+        Fit GP using a precomputed training Gram matrix. 
+
+        Inputs:
+            K_train: (n_train, n_train)
+            y_train: (n_train,)
+        """
         y = np.asarray(y_train, dtype=float).reshape(-1)
         K = np.asarray(K_train, dtype=float)
 
@@ -66,6 +80,7 @@ class GaussianProcessRegressor:
         if K.shape[0] != y.shape[0]:
             raise ValueError("K_train and y_train size mismatch.")
 
+        # optional normalisation of targets
         if self.normalize_y:
             self.y_mean = float(np.mean(y))
             self.y_std = float(np.std(y) + 1e-12)
@@ -75,9 +90,14 @@ class GaussianProcessRegressor:
             self.y_std = 1.0
             y_use = y
 
+        # add observational noise
         K_noise = K + (self.noise_variance * np.eye(K.shape[0], dtype=float))
         K_noise = (K_noise + K_noise.T) / 2.0  # help numerical symmetry
+
+        # Cholesky factorisation
         self.L = _jittered_cholesky(K_noise, jitter=self.jitter)
+
+        # precompute alpha = (K + noise*I)^-1 y
         self.alpha = _solve_chol(self.L, y_use[:, None]).reshape(-1)
 
         return self
@@ -88,8 +108,14 @@ class GaussianProcessRegressor:
         K_test_diag: np.ndarray | None = None,
         return_std: bool = False,
         return_var: bool = False,
+        include_noise: bool = False,
     ):
         """
+        Predict GP mean and optionally variance.
+
+        If include_noise=True, returns predictive observation variance Var(y*).
+        Otherwise returns latent function variance Var(f*).
+
         Predict using:
           mean = K_cross @ alpha
           var  = diag(K_test) - diag(v^T v), where v solves L v = K_cross^T
@@ -100,6 +126,8 @@ class GaussianProcessRegressor:
             raise RuntimeError("Call fit_from_gram first.")
 
         Kx = np.asarray(K_cross, dtype=float)
+
+        # predictive mean (normalised space)
         mean_norm = Kx @ self.alpha
 
         # Compute predictive variance
@@ -113,6 +141,9 @@ class GaussianProcessRegressor:
             # diag(v^T v) = sum(v^2, axis=0)
             var_norm = Kdd - np.sum(v * v, axis=0)
             var_norm = np.maximum(var_norm, 0.0)  # guard tiny negatives
+
+            if include_noise:
+                var_norm += self.noise_variance # add observation noise to predictive variance in normalised space
 
         # Unnormalize
         mean = mean_norm * self.y_std + self.y_mean
