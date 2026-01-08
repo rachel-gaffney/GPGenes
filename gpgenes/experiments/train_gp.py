@@ -166,12 +166,7 @@ def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params):
     A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=True)
     A_sym = kernels.symmetrize(A)
 
-    # ---------------------------------------------------------
     # 6) Kernel hyperparameters
-    # ---------------------------------------------------------
-    # a1, a2, a3 = 1.0, 0.5, 0.2
-    # length_scale = 1.0
-
     beta = params["beta"]
     length_scale = params["length_scale"]
     a1, a2, a3 = params["a1"], params["a2"], params["a3"]
@@ -196,9 +191,7 @@ def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params):
 
     # TODO: add kernel sanity checks (e.g. PSD, symmetry, condition number, eigen spectrum. Good for report later.)
 
-    # ---------------------------------------------------------
     # 7) Fit per-gene GP on residuals
-    # ---------------------------------------------------------
     rmses = []
     for g in range(n_genes):
         ytr = Rtr[:, g]
@@ -305,9 +298,7 @@ def linear_regression(n_genes, Xtr, Xte, Rtr, Rte):
 def main():
     results = {}
 
-    # ---------------------------------------------------------
     # 1) Simulate gene regulatory network and perturbation data
-    # ---------------------------------------------------------
     genes = data.create_genes(n_genes=30, tf_fraction=0.3, n_modules=3, seed=1)
     n_genes = len(genes)
 
@@ -330,43 +321,31 @@ def main():
     )
     df = pd.DataFrame(rows)
 
-    # ---------------------------------------------------------
     # 2) Train/test split by perturbation (keeps replicates together)
-    # ---------------------------------------------------------
     df_train, df_test = data.split_by_perturbation(df, test_frac=0.25, seed=0)
 
-    # ---------------------------------------------------------
     # 3) Compute baseline from train control samples only
-    # ---------------------------------------------------------
     mu = data.compute_control_baseline(df_train, n_genes=n_genes)
 
-    # ---------------------------------------------------------
     # 4) Build X/Y (GP inputs) and residual targets
-    # ---------------------------------------------------------
     Xtr, Ytr, _ = data.build_xy_from_df(df_train, n_genes=n_genes)
     Xte, Yte, _ = data.build_xy_from_df(df_test, n_genes=n_genes)
 
     Rtr = data.residualize(Ytr, mu)
     Rte = data.residualize(Yte, mu)
 
-    # ---------------------------------------------------------
     # 5) Baseline: linear regression on X (no kernel, no GRN)
-    # ---------------------------------------------------------
     linear_rmses = linear_regression(n_genes, Xtr, Xte, Rtr, Rte)
     results["linear"] = linear_rmses
 
     print(f"[Linear] Mean RMSE across genes: {np.mean(linear_rmses):.4f}")
     print(f"[Linear] Median RMSE across genes: {np.median(linear_rmses):.4f}")
 
-    # ---------------------------------------------------------
     # 6) Hyperparameter grids
-    # ---------------------------------------------------------
     length_scales = [0.7, 1.0, 1.3]
     noise_vals = [5e-4, 1e-3, 2e-3]
 
-    # ---------------------------------------------------------
     # 7) GP with identity K_gene (optimised)
-    # ---------------------------------------------------------
     print("\nOptimising GP identity kernel...")
 
     id_builder = IdentityKernelBuilder(
@@ -392,9 +371,7 @@ def main():
     print(f"[Identity Kernel] Mean RMSE across genes: {np.mean(id_rmses):.4f}")
     print(f"[Identity Kernel] Median RMSE across genes: {np.median(id_rmses):.4f}")
 
-    # ---------------------------------------------------------
     # 8) GP with k1 only
-    # ---------------------------------------------------------
     print("\nOptimising GP k1-only...")
 
     k1_builder = K1KernelBuilder(
@@ -423,9 +400,7 @@ def main():
     print(f"[K1 Kernel] Mean RMSE across genes: {np.mean(k1_rmses):.4f}")
     print(f"[K1 Kernel] Median RMSE across genes: {np.median(k1_rmses):.4f}")
 
-    # ---------------------------------------------------------
     # 9) GP full model (optimised)
-    # ---------------------------------------------------------
     print("\nOptimising GP full model...")
 
     full_builder = FullGPKernelBuilder(
@@ -449,9 +424,7 @@ def main():
     print(f"[GP full] Mean RMSE across genes: {np.mean(rmses_full):.4f}")
     print(f"[GP full] Median RMSE across genes: {np.median(rmses_full):.4f}")
 
-    # ---------------------------------------------------------
     # 8) Report performance and diagnostics
-    # ---------------------------------------------------------
     print("Example gene 0 RMSE:", rmses_full[0])
 
     print("Total samples:", len(df))
@@ -466,10 +439,7 @@ def main():
     print("K_gene shape:", K_gene.shape)
     print("Ktr shape:", Ktr.shape)
 
-    # ---------------------------------------------------------
     # 9) plots (optional)
-    # ---------------------------------------------------------
-
     plt.boxplot(
         [
             results["linear"],
