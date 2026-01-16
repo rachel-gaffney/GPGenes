@@ -44,7 +44,7 @@ def experiment_sample_size(
             df = pd.DataFrame(rows)
 
             df_train, df_test = data.split_by_perturbation(
-                df, test_frac=0.25, seed=seed
+                df, train_frac=0.8, seed=seed
             )
 
             mu = data.compute_control_baseline(df_train, n_genes=n_genes)

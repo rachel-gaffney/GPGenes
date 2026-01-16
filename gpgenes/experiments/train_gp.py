@@ -300,12 +300,97 @@ def linear_regression(n_genes, Xtr, Xte, Rtr, Rte):
     return np.array(linear_rmses)
 
 
-def test_fullgp():
+def test_split_groups():
+    experiments = [
+        {"train": ["single", "double"], "test": ["single", "double"]},
+        {"train": ["single", "double"], "test": ["single"]},
+        {"train": ["single", "double"], "test": ["double"]},
+        {"train": ["single"], "test": ["single", "double"]},
+        {"train": ["single"], "test": ["single"]},
+        {"train": ["single"], "test": ["double"]},
+        {"train": ["double"], "test": ["single", "double"]},
+        {"train": ["double"], "test": ["single"]},
+        {"train": ["double"], "test": ["double"]},
+    ]
+    results = {}
+
     n_genes = 5
     n_motifs = 3
     n_sparse = 2
 
-    results = {}
+    # 1) Simulate gene regulatory network and perturbation data
+    genes = data.create_genes(
+        n_genes=n_genes, n_motif=n_motifs, n_sparse=n_sparse, seed=1
+    )
+
+    perturbations = data.make_perturbation_list(
+        n_genes=n_genes,
+        include_singles=True,
+        include_doubles=True,
+        n_doubles=80,
+        seed=0,
+    )
+
+    rows = data.simulate_dataset(
+        genes,
+        perturbations=perturbations,
+        n_reps=5,
+        steps=1500,
+        delta=0.01,
+        tail_steps=200,
+        seed=42,
+    )
+    df = pd.DataFrame(rows)
+
+    for cfg in experiments:
+        print(f"Running experiment: {cfg}")
+        df_train, df_test = data.split_by_perturbation(
+            df,
+            train_frac=0.8,
+            train_single_pert="single" in cfg["train"],
+            train_double_pert="double" in cfg["train"],
+            test_single_pert="single" in cfg["test"],
+            test_double_pert="double" in cfg["test"],
+            seed=0,
+        )
+
+        mu = data.compute_control_baseline(df_train, n_genes=n_genes)
+
+        Xtr, Ytr, _ = data.build_xy_from_df(df_train, n_genes=n_genes)
+        Xte, Yte, _ = data.build_xy_from_df(df_test, n_genes=n_genes)
+
+        Rtr = data.residualize(Ytr, mu)
+        Rte = data.residualize(Yte, mu)
+
+        length_scales = [0.7, 1.0, 1.3]
+        noise_vals = [5e-4, 1e-3, 2e-3]
+
+        full_builder = FullGPKernelBuilder(
+            genes=genes,
+            n_genes=n_genes,
+            betas=[0.3, 0.5, 0.7],
+            length_scales=length_scales,
+            a_vals=[0.0, 0.25, 0.5, 0.75, 1.0],
+            noise_vals=noise_vals,
+        )
+
+        best_full, lml_full = optimise_hyperparameters(full_builder, Xtr, Rtr, n_genes)
+
+        print("Best full params:", best_full)
+        print(f"Best LML: {lml_full:.2f}")
+
+        rmses_full, K_gene, Ktr = gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, best_full)
+
+        results["gp_full"] = rmses_full
+
+        print(f"[GP full] Mean RMSE across genes: {np.mean(rmses_full):.4f}")
+        print(f"[GP full] Median RMSE across genes: {np.median(rmses_full):.4f}")
+
+
+def test_fullgp():
+    n_genes = 5
+    n_motifs = 3
+    n_sparse = 2
 
     # 1) Simulate gene regulatory network and perturbation data
     genes = data.create_genes(
@@ -332,7 +417,7 @@ def test_fullgp():
     df = pd.DataFrame(rows)
 
     # 2) Train/test split by perturbation (keeps replicates together)
-    df_train, df_test = data.split_by_perturbation(df, test_frac=0.25, seed=0)
+    df_train, df_test = data.split_by_perturbation(df, train_frac=0.8, seed=0)
 
     # 3) Compute baseline from train control samples only
     mu = data.compute_control_baseline(df_train, n_genes=n_genes)
@@ -362,8 +447,6 @@ def test_fullgp():
     print(f"Best LML: {lml_full:.2f}")
 
     rmses_full, K_gene, Ktr = gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, best_full)
-
-    results["gp_full"] = rmses_full
 
     print(f"[GP full] Mean RMSE across genes: {np.mean(rmses_full):.4f}")
     print(f"[GP full] Median RMSE across genes: {np.median(rmses_full):.4f}")
@@ -404,7 +487,7 @@ def main():
     df = pd.DataFrame(rows)
 
     # 2) Train/test split by perturbation (keeps replicates together)
-    df_train, df_test = data.split_by_perturbation(df, test_frac=0.25, seed=0)
+    df_train, df_test = data.split_by_perturbation(df, train_frac=0.8, seed=0)
 
     # 3) Compute baseline from train control samples only
     mu = data.compute_control_baseline(df_train, n_genes=n_genes)
@@ -547,4 +630,4 @@ def main():
 
 
 if __name__ == "__main__":
-    test_fullgp()
+    test_split_groups()
