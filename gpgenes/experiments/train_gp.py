@@ -302,23 +302,23 @@ def linear_regression(n_genes, Xtr, Xte, Rtr, Rte):
 
 def test_split_groups():
     experiments = [
-        {"train": ["single", "double"], "test": ["single", "double"]},
-        {"train": ["single", "double"], "test": ["single"]},
-        {"train": ["single", "double"], "test": ["double"]},
-        {"train": ["single"], "test": ["single", "double"]},
-        {"train": ["single"], "test": ["single"]},
-        {"train": ["single"], "test": ["double"]},
-        {"train": ["double"], "test": ["single", "double"]},
-        {"train": ["double"], "test": ["single"]},
-        {"train": ["double"], "test": ["double"]},
+        {"train": "single+double", "test": "single+double"},
+        {"train": "single+double", "test": "single"},
+        {"train": "single+double", "test": "double"},
+        {"train": "single", "test": "single+double"},
+        {"train": "single", "test": "single"},
+        {"train": "single", "test": "double"},
+        {"train": "double", "test": "single+double"},
+        {"train": "double", "test": "single"},
+        {"train": "double", "test": "double"},
     ]
-    results = {}
+    plot_exp_order = ["single", "double", "single+double"]
+    results = np.ndarray((3, 3), dtype=np.float32)
 
     n_genes = 5
     n_motifs = 3
     n_sparse = 2
 
-    # 1) Simulate gene regulatory network and perturbation data
     genes = data.create_genes(
         n_genes=n_genes, n_motif=n_motifs, n_sparse=n_sparse, seed=1
     )
@@ -381,10 +381,29 @@ def test_split_groups():
 
         rmses_full, K_gene, Ktr = gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, best_full)
 
-        results["gp_full"] = rmses_full
+        mean_rmse = np.mean(rmses_full)
+        results_i = plot_exp_order.index(cfg["train"])
+        results_j = plot_exp_order.index(cfg["test"])
+        results[results_i][results_j] = mean_rmse
 
-        print(f"[GP full] Mean RMSE across genes: {np.mean(rmses_full):.4f}")
+        print(f"[GP full] Mean RMSE across genes: {mean_rmse:.4f}")
         print(f"[GP full] Median RMSE across genes: {np.median(rmses_full):.4f}")
+
+    import matplotlib.pyplot as plt
+
+    plt.figure(figsize=(6, 5))
+    plt.imshow(results)
+    plt.colorbar(label="Mean RMSE")
+
+    plt.xticks([0, 1, 2], plot_exp_order)
+    plt.yticks([0, 1, 2], plot_exp_order)
+
+    plt.xlabel("Test")
+    plt.ylabel("Train")
+    plt.title("RMSE by Train/Test Split")
+
+    plt.tight_layout()
+    plt.show()
 
 
 def test_fullgp():
