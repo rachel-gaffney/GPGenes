@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from gpgenes import data
-from .train_gp import *
+from gpgenes.models.train import *
 
 
 def experiment_sample_size(
@@ -63,81 +63,6 @@ def experiment_sample_size(
         avg_rmses.append(np.mean(rmses_reps))
 
     return avg_rmses
-
-
-def solver_linear(genes, n_genes, Xtr, Rtr):
-    models = []
-    for g in range(n_genes):
-        lr = LinearRegression(fit_intercept=True)
-        lr.fit(Xtr, Rtr[:, g])
-        models.append(lr)
-
-    def solver(Xte, Rte):
-        rmses = []
-        for g, lr in enumerate(models):
-            pred = lr.predict(Xte)
-            rmses.append(rmse(Rte[:, g], pred))
-        return np.array(rmses)
-
-    return solver
-
-
-def solver_identity(genes, n_genes, Xtr, Rtr):
-    builder = IdentityKernelBuilder(
-        n_genes=n_genes,
-        length_scales=[0.7, 1.0, 1.3],
-        a_vals=[0.25, 0.5, 1.0],
-        noise_vals=[5e-4, 1e-3, 2e-3],
-    )
-
-    best_params, _ = optimise_hyperparameters(builder, Xtr, Rtr, n_genes)
-
-    def solver(Xte, Rte):
-        return gp_identity(n_genes, Xtr, Xte, Rtr, Rte, params=best_params)
-
-    return solver
-
-
-def solver_k1(genes, n_genes, Xtr, Rtr):
-    builder = K1KernelBuilder(
-        n_genes=n_genes,
-        length_scales=[0.7, 1.0, 1.3],
-        noise_vals=[5e-4, 1e-3, 2e-3],
-    )
-
-    best_params, _ = optimise_hyperparameters(builder, Xtr, Rtr, n_genes)
-
-    def solver(Xte, Rte):
-        return gp_k1(
-            n_genes,
-            Xtr,
-            Xte,
-            Rtr,
-            Rte,
-            length_scale=best_params["length_scale"],
-            noise=best_params["noise"],
-        )
-
-    return solver
-
-
-def solver_full(genes, n_genes, Xtr, Rtr):
-    builder = FullGPKernelBuilder(
-        genes=genes,
-        n_genes=n_genes,
-        betas=[0.3, 0.5, 0.7],
-        length_scales=[0.7, 1.0, 1.3],
-        a_vals=[0.0, 0.25, 0.5, 0.75, 1.0],
-        noise_vals=[5e-4, 1e-3, 2e-3],
-    )
-
-    best_params, _ = optimise_hyperparameters(builder, Xtr, Rtr, n_genes)
-
-    def solver(Xte, Rte):
-        rmses, _, _ = gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, best_params)
-        return rmses
-
-    return solver
 
 
 if __name__ == "__main__":
